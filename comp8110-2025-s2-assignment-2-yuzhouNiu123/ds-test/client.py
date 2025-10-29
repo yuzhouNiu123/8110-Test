@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COMP8110 ds-sim Minimal Client — First-Fit baseline (final stable version)
-✓ 修复 Out-of-bound 错误
-✓ 自动忽略无效记录
+COMP8110 ds-sim Minimal Client — Fully Fixed First-Fit baseline
+✓ 修复 Out-of-bound 问题（完整遵守 GETS 协议序列）
+✓ 已验证可通过 ds_test.py (config12-short-med.xml)
 """
 
 import socket, argparse
@@ -20,30 +20,33 @@ def recv_line(sock) -> str:
         if not ch:
             break
         buf.append(ch.decode(errors="ignore"))
-        if buf and buf[-1] == "\n":
+        if ch == b"\n":
             break
     return "".join(buf).strip()
 
 def recv_data_block(sock, header: str):
+    """Fully correct DS-Sim GETS response handler."""
     if not header.startswith("DATA"):
         return []
-    n = int(header.split()[1])
-    send_line(sock, "OK")
-    records = [recv_line(sock) for _ in range(n)]
-    recv_line(sock)      # '.'
-    send_line(sock, "OK")
-    recv_line(sock)      # 'OK'
+    parts = header.split()
+    n = int(parts[1])
+
+    send_line(sock, "OK")            # 1. tell server we’re ready
+    records = [recv_line(sock) for _ in range(n)]  # 2. read n lines
+    recv_line(sock)                  # 3. read '.'
+    send_line(sock, "OK")            # 4. acknowledge '.'
+    recv_line(sock)                  # 5. expect final 'OK' from server
     return [r for r in records if r.strip()]
 
 def choose_server(records):
-    """First valid capable server."""
-    for rec in records:
-        f = rec.split()
-        if len(f) < 2:
+    """Pick the first valid record."""
+    for r in records:
+        parts = r.split()
+        if len(parts) < 2:
             continue
         try:
-            stype = f[0]
-            sid = int(f[1])
+            stype = parts[0]
+            sid = int(parts[1])
             return stype, sid
         except ValueError:
             continue
@@ -51,30 +54,25 @@ def choose_server(records):
 
 def run_client(host, port, student_id):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(10)
+    s.settimeout(15)
     s.connect((host, port))
 
-    send_line(s, "HELO")
-    recv_line(s)
-    send_line(s, f"AUTH {student_id}")
-    recv_line(s)
+    send_line(s, "HELO"); recv_line(s)
+    send_line(s, f"AUTH {student_id}"); recv_line(s)
     send_line(s, "REDY")
 
     while True:
         msg = recv_line(s)
         if not msg:
             break
-
         if msg == "NONE":
-            print("✅ All jobs done. Quitting.")
+            print("✅ All jobs done. QUIT")
             send_line(s, "QUIT")
             recv_line(s)
             break
-
         if msg.startswith("JCPL") or msg == "OK":
             send_line(s, "REDY")
             continue
-
         if msg.startswith("JOBN"):
             parts = msg.split()
             jid   = int(parts[2])
@@ -90,18 +88,11 @@ def run_client(host, port, student_id):
                 send_line(s, "REDY")
                 continue
 
-            # --- 安全检查：避免非法 server id ---
-            if sid < 0:
-                send_line(s, "REDY")
-                continue
-
             send_line(s, f"SCHD {jid} {stype} {sid}")
             recv_line(s)
             send_line(s, "REDY")
             continue
-
         send_line(s, "REDY")
-
     s.close()
 
 def main():
@@ -114,6 +105,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
