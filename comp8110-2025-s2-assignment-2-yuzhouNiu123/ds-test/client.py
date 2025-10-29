@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COMP8110 — Minimal Working Client (通信+简单调度)
-握手 + 把所有任务调度到 small 0
+COMP8110 — Minimal Stable Client
+通信+调度，完全符合 ds-sim 协议顺序
 """
 
 import socket, argparse
@@ -28,23 +28,39 @@ def run_client(host, port, student_id):
     s.connect((host, port))
     print(f"✅ Connected to ds-server at {host}:{port}")
 
-    send_line(s, "HELO"); print("→", recv_line(s))
-    send_line(s, f"AUTH {student_id}"); print("→", recv_line(s))
+    # --- handshake ---
+    send_line(s, "HELO"); recv_line(s)
+    send_line(s, f"AUTH {student_id}"); recv_line(s)
     send_line(s, "REDY")
 
     while True:
         msg = recv_line(s)
+        if not msg:
+            break
         print("←", msg)
+
+        # no more jobs
         if msg == "NONE":
             send_line(s, "QUIT")
             print("→", recv_line(s))
             break
+
+        # server OK or JCPL
+        if msg.startswith("OK") or msg.startswith("JCPL"):
+            send_line(s, "REDY")
+            continue
+
+        # new job
         if msg.startswith("JOBN"):
             parts = msg.split()
             jid = parts[2]
-            send_line(s, f"SCHD {jid} small 0")  # 调度到 small 0
-            recv_line(s)
-        send_line(s, "REDY")
+            # send schedule command
+            send_line(s, f"SCHD {jid} small 0")
+            ack = recv_line(s)  # 读取OK回复
+            print("→", ack)
+            # send REDY for next job
+            send_line(s, "REDY")
+            continue
 
     s.close()
     print("✅ All jobs scheduled. Connection closed.")
@@ -59,3 +75,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
