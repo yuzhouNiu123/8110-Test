@@ -7,8 +7,29 @@ import socket
 import sys
 import getpass
 
-HOST = "localhost"
-PORT = 50000  # ✅ 默认端口号，保持与 ds_test.py 一致
+HOST = "127.0.0.1"   # 服务器在本地
+PORT = 54678         # 要和 ds-server 保持一致
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((HOST, PORT))
+
+# === Handshake sequence ===
+s.sendall(b"HELO\n")
+print("Sent: HELO")
+data = s.recv(1024)
+print("Received:", data.decode().strip())
+
+s.sendall(b"AUTH 46725067\n")  # 用你的 student ID
+print("Sent: AUTH 46725067")
+data = s.recv(1024)
+print("Received:", data.decode().strip())
+
+s.sendall(b"REDY\n")
+print("Sent: REDY")
+data = s.recv(1024)
+print("Received:", data.decode().strip())
+
+s.close()
 
 def main():
     try:
@@ -80,3 +101,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
