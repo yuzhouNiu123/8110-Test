@@ -1,79 +1,57 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COMP8110 — Minimal Stable Client
-通信+调度，完全符合 ds-sim 协议顺序
+COMP8110 — Minimal Confirmed Handshake Client
+完全验证通信; 只接收一次 JOBN 就退出
 """
 
 import socket, argparse
 
-def send_line(sock, s: str):
-    if not s.endswith("\n"):
-        s += "\n"
-    sock.sendall(s.encode())
+def send_line(sock, text):
+    sock.sendall((text + "\n").encode())
 
 def recv_line(sock):
-    data = []
-    while True:
-        ch = sock.recv(1)
-        if not ch:
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = sock.recv(1)
+        if not chunk:
             break
-        data.append(ch.decode(errors="ignore"))
-        if ch == b"\n":
-            break
-    return "".join(data).strip()
+        data += chunk
+    return data.decode().strip()
 
-def run_client(host, port, student_id):
+def run_client(host, port, user):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
-    print(f"✅ Connected to ds-server at {host}:{port}")
+    print(f"Connected to {host}:{port}")
 
-    # --- handshake ---
-    send_line(s, "HELO"); recv_line(s)
-    send_line(s, f"AUTH {student_id}"); recv_line(s)
+    send_line(s, "HELO"); print("→", recv_line(s))
+    send_line(s, f"AUTH {user}"); print("→", recv_line(s))
     send_line(s, "REDY")
 
     while True:
         msg = recv_line(s)
-        if not msg:
-            break
         print("←", msg)
-
-        # no more jobs
+        if msg.startswith("JOBN"):
+            jid = msg.split()[2]
+            send_line(s, f"SCHD {jid} small 0")
+            print("→", recv_line(s))   # expect OK
+            send_line(s, "QUIT")
+            print("→", recv_line(s))
+            break
         if msg == "NONE":
             send_line(s, "QUIT")
             print("→", recv_line(s))
             break
 
-        # server OK or JCPL
-        if msg.startswith("OK") or msg.startswith("JCPL"):
-            send_line(s, "REDY")
-            continue
-
-        # new job
-        if msg.startswith("JOBN"):
-            parts = msg.split()
-            jid = parts[2]
-            # send schedule command
-            send_line(s, f"SCHD {jid} small 0")
-            ack = recv_line(s)  # 读取OK回复
-            print("→", ack)
-            # send REDY for next job
-            send_line(s, "REDY")
-            continue
-
     s.close()
-    print("✅ All jobs scheduled. Connection closed.")
+    print("Done.")
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=50000)
-    parser.add_argument("--user", default="46725067")
-    args = parser.parse_args()
-    run_client(args.host, args.port, args.user)
+    p = argparse.ArgumentParser()
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=50000)
+    p.add_argument("--user", default="46725067")
+    a = p.parse_args()
+    run_client(a.host, a.port, a.user)
 
 if __name__ == "__main__":
-    main()
-
-
