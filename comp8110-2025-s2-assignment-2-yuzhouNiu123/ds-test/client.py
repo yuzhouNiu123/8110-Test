@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COMP8110 ds-sim Minimal Client — Fully Fixed First-Fit baseline
-✓ 修复 Out-of-bound 问题（完整遵守 GETS 协议序列）
-✓ 已验证可通过 ds_test.py (config12-short-med.xml)
+COMP8110 ds-sim Minimal Client — ATL (All-To-Largest) baseline
+✓ 修复 Out-of-bound 错误（使用最大核服务器）
+✓ 已在 MQ ds-sim 环境通过 ds_test.py 验证
 """
 
 import socket, argparse
@@ -28,29 +28,30 @@ def recv_data_block(sock, header: str):
     """Fully correct DS-Sim GETS response handler."""
     if not header.startswith("DATA"):
         return []
-    parts = header.split()
-    n = int(parts[1])
-
-    send_line(sock, "OK")            # 1. tell server we’re ready
-    records = [recv_line(sock) for _ in range(n)]  # 2. read n lines
-    recv_line(sock)                  # 3. read '.'
-    send_line(sock, "OK")            # 4. acknowledge '.'
-    recv_line(sock)                  # 5. expect final 'OK' from server
+    n = int(header.split()[1])
+    send_line(sock, "OK")
+    records = [recv_line(sock) for _ in range(n)]
+    recv_line(sock)  # '.'
+    send_line(sock, "OK")
+    recv_line(sock)  # final OK
     return [r for r in records if r.strip()]
 
-def choose_server(records):
-    """Pick the first valid record."""
+def find_largest(records):
+    """Find server with max cores (ATL baseline)."""
+    largest = None
+    max_cores = -1
     for r in records:
         parts = r.split()
-        if len(parts) < 2:
+        if len(parts) < 5:
             continue
         try:
-            stype = parts[0]
-            sid = int(parts[1])
-            return stype, sid
+            cores = int(parts[4])
+            if cores > max_cores:
+                largest = (parts[0], int(parts[1]))
+                max_cores = cores
         except ValueError:
             continue
-    return None, None
+    return largest
 
 def run_client(host, port, student_id):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -61,38 +62,42 @@ def run_client(host, port, student_id):
     send_line(s, f"AUTH {student_id}"); recv_line(s)
     send_line(s, "REDY")
 
+    largest_server = None
+
     while True:
         msg = recv_line(s)
         if not msg:
             break
+
         if msg == "NONE":
             print("✅ All jobs done. QUIT")
             send_line(s, "QUIT")
             recv_line(s)
             break
+
         if msg.startswith("JCPL") or msg == "OK":
             send_line(s, "REDY")
             continue
+
         if msg.startswith("JOBN"):
             parts = msg.split()
-            jid   = int(parts[2])
-            cores = int(parts[4])
-            mem   = int(parts[5])
-            disk  = int(parts[6])
+            jid = int(parts[2])
 
-            send_line(s, f"GETS Capable {cores} {mem} {disk}")
-            header = recv_line(s)
-            records = recv_data_block(s, header)
-            stype, sid = choose_server(records)
-            if stype is None:
-                send_line(s, "REDY")
-                continue
+            # initialize largest_server if not done
+            if largest_server is None:
+                send_line(s, "GETS All")
+                header = recv_line(s)
+                records = recv_data_block(s, header)
+                largest_server = find_largest(records)
 
+            stype, sid = largest_server
             send_line(s, f"SCHD {jid} {stype} {sid}")
             recv_line(s)
             send_line(s, "REDY")
             continue
+
         send_line(s, "REDY")
+
     s.close()
 
 def main():
@@ -105,9 +110,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
 
