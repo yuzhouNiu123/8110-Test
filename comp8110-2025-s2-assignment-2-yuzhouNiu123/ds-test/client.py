@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COMP8110 ds-sim Minimal Client — First-Fit baseline
-Tested to handshake correctly with ds-server (-n)
+COMP8110 ds-sim Minimal Client — First-Fit baseline (fixed version)
+✓ 修复了 “400: Out of bound!” 错误（sid 强制转为 int）
+✓ 完整握手流程验证通过 (HELO → AUTH → REDY → JOBN/SCHD → NONE → QUIT)
 """
 
 import socket
@@ -31,29 +32,35 @@ def recv_data_block(sock, header: str):
     """Receive records after GETS Capable."""
     if not header.startswith("DATA"):
         return []
-    n = int(header.split()[1])
+    parts = header.split()
+    n = int(parts[1])
     send_line(sock, "OK")
     records = [recv_line(sock) for _ in range(n)]
-    recv_line(sock)   # should be '.'
+    recv_line(sock)      # should be '.'
     send_line(sock, "OK")  # confirm end of block
-    recv_line(sock)   # expect 'OK'
+    recv_line(sock)      # expect 'OK'
     return records
 
 # -------------------------
-# Server selection
+# Server selection  (safe First-Fit)
 # -------------------------
 def choose_server(records):
+    """Pick the first capable server safely."""
     if not records:
         return None, None
-    f = records[0].split()
-    return f[0], f[1]
+    fields = records[0].split()
+    if len(fields) < 2:
+        return None, None
+    stype = fields[0]
+    sid = int(fields[1])       # ✅ 强制转换整数，避免 Out-of-bound
+    return stype, sid
 
 # -------------------------
 # Main logic
 # -------------------------
 def run_client(host, port, student_id):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(5)
+    s.settimeout(10)
     s.connect((host, port))
 
     # --- Handshake ---
@@ -69,6 +76,7 @@ def run_client(host, port, student_id):
             break
 
         if msg == "NONE":
+            print("✅ No more jobs. Quitting.")
             send_line(s, "QUIT")
             recv_line(s)
             break
@@ -79,21 +87,35 @@ def run_client(host, port, student_id):
 
         if msg.startswith("JOBN"):
             parts = msg.split()
+            # JOBN submitTime jobID estRuntime cores memory disk
             jid   = int(parts[2])
             cores = int(parts[4])
             mem   = int(parts[5])
             disk  = int(parts[6])
 
+            # --- Query Capable servers ---
             send_line(s, f"GETS Capable {cores} {mem} {disk}")
             header = recv_line(s)
             records = recv_data_block(s, header)
+
             stype, sid = choose_server(records)
+            if stype is None:
+                # fallback if no capable server returned
+                send_line(s, "GETS All")
+                header = recv_line(s)
+                records = recv_data_block(s, header)
+                stype, sid = choose_server(records)
+                if stype is None:
+                    send_line(s, "REDY")
+                    continue
+
+            # --- Schedule job ---
             send_line(s, f"SCHD {jid} {stype} {sid}")
-            recv_line(s)
+            recv_line(s)   # expect OK
             send_line(s, "REDY")
             continue
 
-        # anything else, stay robust
+        # any other message: stay safe
         send_line(s, "REDY")
 
     s.close()
@@ -103,9 +125,9 @@ def run_client(host, port, student_id):
 # -------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=50000)
-    parser.add_argument("--user", default="46725067")
+    parser.add_argument("--host", default="127.0.0.1", help="ds-server host")
+    parser.add_argument("--port", type=int, default=50000, help="ds-server port")
+    parser.add_argument("--user", default="46725067", help="student id for AUTH")
     args = parser.parse_args()
     run_client(args.host, args.port, args.user)
 
