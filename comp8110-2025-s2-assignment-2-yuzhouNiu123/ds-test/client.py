@@ -24,8 +24,13 @@ def run_client(host, port, user):
     s.connect((host, port))
     print(f"Connected to {host}:{port}")
 
-    send_line(s, "HELO"); print("→", recv_line(s))
-    send_line(s, f"AUTH {user}"); print("→", recv_line(s))
+    # --- handshake ---
+    send_line(s, "HELO")
+    print("→", recv_line(s))
+
+    send_line(s, f"AUTH {user}")
+    print("→", recv_line(s))
+
     send_line(s, "REDY")
 
     while True:
@@ -55,3 +60,5 @@ def main():
     run_client(a.host, a.port, a.user)
 
 if __name__ == "__main__":
+    main()
+
