@@ -10,8 +10,8 @@ import os
 import time
 
 def send_line(sock, s: str):
-    if not s.endswith("\r\n"):
-        s = s + "\r\n"
+    if not s.endswith("\n"):
+        s = s + "\n"
     print(f"--> Sending: {repr(s)}")
     sock.sendall(s.encode())
 
@@ -111,5 +111,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
